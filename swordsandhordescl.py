@@ -1,11 +1,382 @@
-import tkFileDialog, random, json
+import tkFileDialog
+import random, datetime
+import json, sys, os
 
+class Thing():
+    def __init__(self, parent, **kwargs):
+        self.parent = parent
+        self.kwargs = kwargs
+        
+        if "kind" in self.kwargs:
+            self.kind = self.findKind(self.kwargs["kind"])
+        else:
+            self.kind = self.findKind("thing")
+            
+        if "state" in self.kwargs and self.kwargs["state"] == "random":
+            self.makeRandom()
+        elif "state" in self.kwargs and self.kwargs["state"] == "exact":
+            self.makeExact()
+        else:
+            self.makeNew()
+    
+    def findKind(self, searchString):
+        pass
+    ##    Thing.findKind(searchString)
+    
+    def makeRandom(self):
+        pass
+    
+    ##    Thing.makeRandom()
+    
+    def makeExact(self):
+        pass
+    
+    ##    Thing.makeExact()
+    
+    def makeNew(self):
+        pass
+    
+    ##    Thing.makeNew()
+            
+class Combatant():
+    pass
+
+class Room():
+    pass
+
+class GameState():
+    START_HERO = {"race" : "", "gender" : "", "name" : ""}
+    FIRST_ROOM = {}
+    
+    def __init__(self, parent, filename=None):
+        self.parent = parent
+        self.filename = filename
+        
+        if self.filename:
+            self.load()
+        else:
+            self.new()
+    
+    def nameParseable(self, language, moniker):
+        for item in moniker:
+            if item in language:
+                return True
+        else:
+            return False
+    
+    def makeName(self, language):
+        start = datetime.datetime.now()
+        moniker = random.choice(language["word"])
+        parseable = True
+        
+        while self.nameParseable(language, moniker):
+            elapsed = datetime.datetime.now() - start
+            
+            if elapsed.total_seconds() > 10:
+                return "timelong"
+            
+            builder = []
+            
+            for string in moniker:
+                if string in language:
+                    builder.extend(random.choice(language[string]))
+                else:
+                    builder.append(string)
+            
+            if len(builder) >= 20:
+                return "namelong"
+            else:
+                moniker = builder
+        else:
+            outputName = "".join(moniker).upper()
+            if len(outputName) >= 20:
+                return "namelong"
+            else:
+                return outputName 
+                    
+    def makeNames(self, race, number):
+        language = {
+"word" : [["initial"], ["initial", "midword"], ["initial", "final"],
+          ["initial", "midword", "final"]],
+"initial" : [["onset", "rime"], ["s", "sonset", "rime"], ["rime"]],
+"final" : [["sonorant", "e"], ["c"], ["k"], ["p"], ["que"], ["s"], ["t"],
+           ["xe"], ["bhe"], ["che"], ["dhe"], ["ghe"], ["jhe"], ["khe"],
+           ["phe"], ["qhe"], ["she"], ["the"], ["zhe"]],
+"midword" : [["onset", "rime", "midword"], ["onset", "rime"]],
+"onset" : [["b"], ["c"], ["d"], ["f"], ["g"], ["h"], ["j"], ["k"], ["l"],
+           ["m"], ["n"], ["p"], ["qu"], ["r"], ["s"], ["t"], ["v"], ["w"],
+           ["x"], ["y"], ["z"], ["bh"], ["ch"], ["dh"], ["gh"], ["jh"], ["kh"],
+           ["ph"], ["qh"], ["sh"], ["th"], ["zh"], ["br"], ["cr"], ["dr"],
+           ["fr"], ["gr"], ["jr"], ["kr"], ["pr"], ["qr"], ["shr"], ["tr"],
+           ["vr"], ["wr"], ["zhr"], ["bl"], ["cl"], ["dl"], ["fl"], ["gl"],
+           ["jl"], ["kl"], ["pl"], ["ql"], ["shl"], ["tl"], ["vl"], ["zhl"],
+           ["ng"]],
+"rime" : [["vowel"], ["vowel"], ["vowel", "sonorant"]],
+"vowel" : [["a"], ["ae"], ["e"], ["i"], ["oe"], ["ue"], ["o"], ["u"]],
+"sonorant" : [["r"], ["l"], ["m"], ["n"], ["ng"], ["y"], ["w"], ["h"]],
+"sonset" : [["c"], ["f"], ["h"], ["k"], ["l"], ["m"], ["n"], ["p"], ["qu"],
+            ["t"], ["v"], ["w"], ["y"], ["z"], ["ph"], ["th"], ["cr"], ["dr"],
+            ["fr"], ["kr"], ["pr"], ["tr"], ["vr"], ["cl"], ["fl"], ["kl"],
+            ["pl"], ["ql"], ["tl"], ["vl"], ["ng"]],
+}
+        monikers = []
+        key = "%s.lang" % race
+        lang, exists, control = self.config[key]
+        
+        if exists and control == 0:
+            temp = {}
+            
+            try:
+                with(lang, "r") as f:
+                    temp = json.load(f)
+            except IOError:
+                exists = False
+                control = 0
+                
+                error = """\
+The file "%s" doesn't exist or can't be opened.
+"%s" is the filename specified for naming %s characters.
+If you don't know what to do about that, ask someone who does, like me \
+(Madison (the writer of Swords and Hordes)), or just deal with every %s \
+character having the default style of names.
+self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
+                                   key, lang, exists, control)
+    
+                self.parent.message(error)
+                
+                self.config[key] = lang, exists, control
+                
+            except ValueError:
+                exists = False
+                control = 1
+                
+                error = """\
+The file "%s" exists but isn't a legal JSON document.
+"%s" is the filename specified for naming %s characters.
+If you don't know what to do about that, ask someone who does, like me \
+(Madison (the writer of Swords and Hordes)), or just deal with every %s \
+character having the default style of names.
+self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
+                                   key, lang, exists, control)
+                self.parent.message(error)
+            else:
+                try:
+                    foo = self.makeName(temp)
+                except KeyError:
+                    exists = False
+                    control = 2
+                    
+                    error = """\
+The file "%s" is a legal JSON document that doesn't do what it should. \
+Something is wrong with it- it probably doesn't have a "word" entry.
+"%s" is the filename specified for naming %s characters.
+If you don't know what to do about that, ask someone who does, like me \
+(Madison (the writer of Swords and Hordes)), or just deal with every %s \
+character having the default style of names.
+self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
+                                   key, lang, exists, control)
+                    self.config[key] = lang, exists, control
+                else:
+                    exists = True
+                    control = 1
+                    
+                    monikers.append(foo)
+                    language = temp
+                    
+                    self.config[key] = lang, exists, control
+                    
+        elif exists and control == 1:
+            with open(lang, "r") as f:
+                language = json.load(f)
+        
+        duration = False
+        length = False
+        
+        while len(monikers) < number:
+            foo = self.makeName(language)
+            
+            if foo == "timelong":
+                if duration:
+                    error = """\
+It's taking too long to come up with names for an %s.
+If you don't know what to do about that, ask someone who does, like me \
+(Madison (the writer of Swords and Hordes)). In the meantime, I'm going to \
+close the program- sorry.
+language = %s
+self.config[%s] = %s, %s, %s""" % (race, json.dumps(language), key, lang,
+                                   exists, control)
+                    self.parent.message(error)
+                    sys.exit("""Seriously, tell me if this happens. \
+maseaver@gmail.com""")
+                else:
+                    duration = True
+            elif foo == "namelong":
+                if length:
+                    error = """\
+The language being used makes names that are too long.
+If you don't know what to do about that, ask someone who does, like me \
+(Madison (the writer of Swords and Hordes)). In the meantime, I'm going to \
+close the program- sorry.
+language = %s
+config[%s] = %s, %s, %s""" % (json.dumps(language), key, lang,
+                              exists, control)
+                    self.parent.message(error)
+                    sys.exit("""Seriously, tell me if this happens. \
+maseaver@gmail.com""")
+            else:
+                monikers.append(foo)
+        
+        return monikers
+    
+    def getConfigNew(self):
+        #self.config = self.parent.getGameConfig()
+        razzamatazz = {"races" : ["orc", "ratfolk", "skeleton", "human"],
+                       "genders" : ["puce", "sienna", "periwinkle",
+                                    "chartreuse"],}
+        for race in razzamatazz["races"]:
+            razzamatazz["%s.lang" % race] = "", False, 0
+        return razzamatazz
+    
+    def getConfig(self, config):
+        self.config = config
+    
+    def heroSetupNew(self):
+        tempHero = GameState.START_HERO
+        
+        attempts = 0
+        while not tempHero["race"]:
+            prompt = ""
+            
+            if attempts == 0:
+                prompt = """\
+Welcome to the Hellcave, adventurer. What is your race?"""
+            else:
+                prompt = """\
+Didn't understand that, mate. Really, what's your race?"""
+                
+            options = self.config["races"]
+            
+            tempHero["race"] = self.parent.select(prompt, options)
+            attempts = attempts + 1
+        
+        attempts = 0
+        while not tempHero["gender"]:
+            prompt = ""
+            
+            if attempts == 0:
+                foo = tempHero["race"]
+                prompt = """\
+Of course, and a fine specimen of %s you are. What is your gender?""" % foo
+            else:
+                bar = len(self.config["genders"])
+                prompt = """\
+Come on now, there's only %d, you've got to be one... so which?""" % bar
+            options = self.config["genders"]
+            
+            tempHero["gender"] = self.parent.select(prompt, options)
+            
+            attempts = attempts + 1
+        
+        attempts = 0
+        while tempHero["name"] in ["", "none of these"]:
+            prompt = ""
+            
+            if attempts == 0:
+                foo = tempHero["gender"], tempHero["race"]
+                prompt = """\
+And may I ask, mighty %s %s warrior, what is your honorable name?""" % foo
+            else:
+                prompt = """\
+None of those? Well then, surely one of these is it?"""
+            
+            options = self.makeNames(tempHero["race"], 5)
+            options.append("none of these")
+            
+            tempHero["name"] = self.parent.select(prompt, options)
+        
+        prompt = """\
+You are a %s %s named %s.
+Is that alright?""" % (tempHero["gender"], tempHero["race"],
+                       tempHero["name"])
+        options = ["Yes", "No"]
+        
+        if self.parent.select(prompt, options) == "" or "Yes":
+            congratulations = """\
+Alright! Your hero is %s the %s %s! When the game's actually up and running, \
+there'll be something to do after this... lmao. Until then!""" % (
+tempHero["name"], tempHero["gender"], tempHero["race"])
+            self.parent.message(congratulations)
+            you, value = self.heroSetup(tempHero)
+            return you, value
+            
+        else:
+            return {}, True
+            
+    def heroSetup(self, hero):
+        return hero, False
+    
+    def roomSetupNew(self, coordinates):
+        pass
+    
+    def roomSetup(self, coordinates, room):
+        pass
+    
+    def new(self):
+        self.config = self.getConfigNew()
+        
+        heroNeeded = True
+        while heroNeeded:
+            self.hero, heroNeeded = self.heroSetupNew()
+        self.rooms = {(0, 0, 0): GameState.FIRST_ROOM}
+        ##    GameState.getConfig(), GameState.heroSetup(),
+        ##GameState.FIRST_ROOM
+        
+    def load(self):
+        savefile = {}
+        
+        with open(self.filename, "r") as f:
+            savefile = json.load(f)
+        
+        self.config = getConfig(savefile["config"])
+        self.hero = self.heroSetup(savefile["hero"])
+        self.rooms = {}
+        
+        for coordinates in savefile["rooms"]:
+            savefile["rooms"][coordinates] = room
+            self.rooms[coordinates] = self.roomSetup(coordinates, room)
+        ##    GameState.heroSetup(hero), GameState.roomSetup(room)
+        
 class ProgramState():
     def __init__(self):
+        self.message("""\
+S W O R D S + A N D + H O R D E S
+
+""")
         self.game = None
-        ##  Fucking write the GameState class goddammit
 
         self.setupCommands()
+
+    def message(self, string):
+        middle = ""
+        
+        for line in string.splitlines():
+            if not line:
+                print("")
+            else:
+                middle = "   "
+                
+                for character in line:
+                    middle = middle + character
+                
+                while len(middle) >= 80:
+                    if " " in middle:
+                        lineend = middle.rfind(" ", 0, 80)
+                        print(middle[:lineend])
+                        middle = middle[lineend + 1:]
+                else:
+                    print(middle)
+    
+    def checkFiles(self):
 
     def setupCommands(self):
         """Create the command lexicon.
@@ -65,13 +436,13 @@ class ProgramState():
 "quit" : (self.quitGame, "Quit game.", [], 0),
 "menu" : (self.mainMenu, "Go to main menu.", [], 0),
 ##  self.newGame, self.resumeGame, self.loadGame, self.helpScreen,
-##self.optionsScreen, self.quitGame, self.mainMenu
+##self.saveGame, self.optionsScreen, self.quitGame, self.mainMenu
 
 
 "inventory" : (self.game.viewYourInventory, "View your inventory.", [], 0),
 "use" : (self.game.useItem, "Use an item in the inventory.",
          self.game.getYourInventory, 1),
-"take" : (self.game.takeItem, "Pick up an object in the room.", [], 1)
+"take" : (self.game.takeItem, "Pick up an object in the room.", [], 1),
 "drop" : (self.game.dropItem, "Drop an item from the inventory.",
           self.game.getYourInventory, 0),
 "throw" : (self.game.throwItem, """Throw something in your inventory at some\
@@ -256,7 +627,7 @@ the room.""", self.game.getYourInventory, 2),
                     
                     actions[-1][2].append(word)
                     
-                elif actions[-1][2] = []:
+                elif actions[-1][2] == []:
                     #   The current action needs an object, but this word isn't
                     #one- see the elif clause immediately preceding. That's OK,
                     #as long as this word isn't a verb- we can just ignore it,
@@ -401,9 +772,30 @@ the room.""", self.game.getYourInventory, 2),
         #problem.
 
         ## Write the code handling the action stack and what to do with
-        #empty stacks and erroneous actions.
-
+        ##empty stacks and erroneous actions.
+        
         return actions
+        
+        #    As always, I'm assuming the user can only enter text via
+        #keysmashing, and so the parser is built to be maximally permissive of
+        #noise in the signal, perhaps to the point of extracting meaningful
+        #input from chaos. I can only hope that, if someone for whom typing is
+        #difficult for whatever reason pays me the tremendous compliment of
+        #playing Swords and Hordes, these parsers are sufficiently generous to
+        #make their playing experience worthwhile.
+                
+        #    Although, honestly, the logic in <command> is not safe for that
+        #kind of input problem... but I have no idea how to write a parser
+        #whose output satisfies the
+        #    (adverb) verb/verb + clarifier (object possibly mandatory)
+        #syntax but whose input processing is involved enough to handle typo-
+        #rich input. This is the kind of problem that outside accessibility
+        #accessories were designed for.
+                
+        ##program    Maybe I should write a <slowcommand> method that can be
+        ##set as the preferred input handler and only parses one "word" at a
+        ##time, but is extremely permissive of typos...? That'd cut the
+        ##complexity down a lot, but it'd still be a pretty big job to tackle.
                     
     def verbStructure(self, verb):
         ##  Write a docstring for <verbStructure>, probably just one line.
@@ -421,20 +813,20 @@ the room.""", self.game.getYourInventory, 2),
             clarifier = True
 
         obj = 0
-        if self.commands[verb][3] = 0:
+        if self.commands[verb][3] == 0:
             #   0-class verbs take no objects. If <obj> == False, <command> will
             #treat following objects as new "examine" actions, causing an error
             #if the last action is incomplete.
             
             obj = False
             
-        elif self.commands[verb][3] = 1:
+        elif self.commands[verb][3] == 1:
             #   1-class verbs always have "default" as their first object. If
             #there are any other objects, "default" is ignored.
             
             obj = ["default"]
 
-        elif self.commands[verb][3] = 2:
+        elif self.commands[verb][3] == 2:
             #   2-class verbs must have an explicit, player-specified object.
             #The empty list evaluates False but is not False, which is... a
             #really stupid-seeming way to handle this? I think it works, though,
@@ -445,3 +837,89 @@ the room.""", self.game.getYourInventory, 2),
             obj = []
             
         return verb, clarifier, obj
+    
+    def select(self, prompt, options):
+        patternMatcher = {}
+        
+        self.message(prompt)
+        
+        for i, option in enumerate(options):
+            patternMatcher[str(i)] = option
+            patternMatcher[str(option)] = option
+            #    All hell will break loose if str(option) is ever in [str(x)
+            #for x in range(len(options))]. Don't do that. (I guess it's fine
+            #in the degenerate case that str(i) == str(option) for option in
+            #options.)
+            
+            self.message("%8d: %s" % (i, option))
+                
+        patterns = patternMatcher.keys()
+        
+        rawSelection = raw_input("\n> ")
+        processing = rawSelection.lstrip()
+        
+        if processing:
+            findings = []
+            for pattern in patterns:
+                if pattern in processing:
+                    findings.append((processing.index(pattern), pattern))
+            
+            if findings:
+                results = []
+                first = len(processing)
+                
+                #    Okay, so the idea here is that every element of findings
+                #is a 2-ple whose second element is a string representing one
+                #of the options between which the user is selecting and whose
+                #first element is the index of the first occurrence of that
+                #string.
+                
+                #    But we don't want all of them, we just want the earliest-
+                #occurring option string and, in the case of a tie, the longest
+                #of them. (Why do we care how long it is? If the user is given
+                #a list of eleven options, and the user enters "10", they will
+                #be confused and irritated if <select> chooses "1" over the
+                #longer "10".
+                
+                #    As always, I'm assuming the user can only enter text via
+                #keysmashing, and so the parser is built to be maximally
+                #permissive of noise in the signal, perhaps to the point of
+                #extracting meaningful input from chaos. I can only hope that,
+                #if someone for whom typing is difficult for whatever reason
+                #pays me the tremendous compliment of playing Swords and
+                #Hordes, these parsers are sufficiently generous to make their
+                #playing experience worthwhile.
+                
+                #    Although, honestly, the logic in <command> is not safe for
+                # that kind of input problem... but I have no idea how to write
+                #a parser whose output satisfies the
+                #    (adverb) verb/verb + clarifier (object possibly mandatory)
+                #syntax but whose input processing is involved enough to handle
+                #typo-rich input. This is the kind of problem that outside
+                #accessibility accessories were designed for.
+                
+                ##program    Maybe I should write a <slowcommand> method that
+                ##can be set as the preferred input handler and only parses one
+                ##"word" at a time, but is extremely permissive of typos...?
+                ##That'd cut the complexity down a lot, but it'd still be a
+                ##pretty big job to tackle.
+                
+                for finding in findings:
+                    if finding[0] < first:
+                        first = finding[0]
+                        results = [patternMatcher[finding[1]]]
+                    elif finding[0] == first:
+                        results.append(patternMatcher[finding[1]])
+                
+                results.sort(key=len)
+                
+                print("")
+                
+                return results.pop()
+        else:
+            print("")
+            
+            return ""
+
+if __name__ == "__main__":
+    program = ProgramState()
