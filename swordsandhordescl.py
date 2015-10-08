@@ -1,360 +1,272 @@
-import tkFileDialog
-import random, datetime
-import json, sys, os
+import swordsandhordes as sah
 
-class Thing():
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        self.kwargs = kwargs
-        
-        if "kind" in self.kwargs:
-            self.kind = self.findKind(self.kwargs["kind"])
-        else:
-            self.kind = self.findKind("thing")
-            
-        if "state" in self.kwargs and self.kwargs["state"] == "random":
-            self.makeRandom()
-        elif "state" in self.kwargs and self.kwargs["state"] == "exact":
-            self.makeExact()
-        else:
-            self.makeNew()
-    
-    def findKind(self, searchString):
-        pass
-    ##    Thing.findKind(searchString)
-    
-    def makeRandom(self):
-        pass
-    
-    ##    Thing.makeRandom()
-    
-    def makeExact(self):
-        pass
-    
-    ##    Thing.makeExact()
-    
-    def makeNew(self):
-        pass
-    
-    ##    Thing.makeNew()
-            
-class Combatant():
-    pass
+class ProgramState(object):
+    """The form of an entry in self.commands is as follows:
+        * The key is a string the user may enter as a "verb".
+        * The value is a 4-ple.
+        * value[0] is a function, the one eventually called when the key is
+    entered as a command.
+        * value[1] is a description of what the command does, for menus and
+    the like.
+        * value[2] is a list of clarifiers the verb takes. A clarifier is a
+    string without which the verb cannot be interpreted. In essence, a verb
+    that requires a clarifier is a blanket identifier for a whole class of
+    verbs, and the clarifier tells you which verb is meant. The archetypal
+    clarifier verbs are ones that involve an item in the player's inventory-
+    "use", "drop", etc. Most of the time, value[2] will be an empty list or
+    a method on the GameState that returns a list of valid clarifiers.
+        * value[3] is an integer 0, 1, or 2, indicating the verb's behavior
+    with respect to objects. 0 indicates that the verb takes no objects, 1
+    indicates that the verb takes an object but has a default object if
+    no explicit object is given, and 2 indicates that the verb requires an
+    explicit object- there is no reasonable way to deduce which object was
+    intended if the player did not supply one. The GameState keeps track of
+    what objects can be acted on, and this list consists of the player
+    character, every non-player character in the current room, and every
+    inanimate object in the current room that is not in the player's
+    inventory. So, for instance, "save"- like most of the commands that do
+    not advance the GameState's clock- is 0, but so is "wait"- which
+    advances the GameState's clock but does nothing else. "attack" is 1,
+    because its function has a default behavior if no object is specified
+    (that is, if the room is empty except for the player character, it
+    describes the player attacking empty air; if there are non-PC objects in
+    the room, it preferentially attacks hostile NPCs, then non-hostile NPCs,
+    then inanimate objects, always picking the first in the list), but an
+    explicit object can be given (the player can pick one of the objects in
+    the room to attack, including the player character themself if desired).
+    At the moment, I can't think of any commands that I intend to implement
+    that act on one of the objects in the room but which has no reasonable
+    default behavior, but I wanted to build it in just in case.
 
-class Room():
-    pass
+    -----
 
-class GameState():
-    START_HERO = {"race" : "", "gender" : "", "name" : ""}
-    FIRST_ROOM = {}
-    
-    def __init__(self, parent, filename=None):
-        self.parent = parent
-        self.filename = filename
+    self.modifiers is a list of "adverbs" that can affect how the verb is
+    executed, but are never required. What a modifier "means" for a given
+    verb is idiosyncratic, but- if I've done my job correctly- intuitive.
+
+    """
         
-        if self.filename:
-            self.load()
-        else:
-            self.new()
-    
-    def nameParseable(self, language, moniker):
-        for item in moniker:
-            if item in language:
-                return True
-        else:
-            return False
-    
-    def makeName(self, language):
-        start = datetime.datetime.now()
-        moniker = random.choice(language["word"])
-        parseable = True
+    commands = {
+"new" : (self.newGame, "Start new game.", [], 0),
+"resume" : (self.resumeGame, "Resume active game.", [], 0),
+"load" : (self.loadGame, "Load existing gamefile.", [], 0),
+"save" : (self.saveGame, "Save active game.", [], 0),
+"help" : (self.helpScreen, "View help screen.", [], 0),
+"options" : (self.optionsScreen, "View options screen.", [], 0),
+"quit" : (self.quitGame, "Quit game.", [], 0),
+"menu" : (self.mainMenu, "Go to main menu.", [], 0),
+
+"inventory" : (self.game.viewYourInventory, "View your inventory.", [], 0),
+"use" : (self.game.useItem, "Use an item in the inventory.",
+         self.game.getYourInventory, 1),
+"take" : (self.game.takeItem, "Pick up an object in the room.", [], 1),
+"drop" : (self.game.dropItem, "Drop an item from the inventory.",
+          self.game.getYourInventory, 0),
+"throw" : (self.game.throwItem, """Throw something in your inventory at some\
+thing in the room.""", self.game.getYourInventory, 2),
+"toss" : (self.game.tossItem, """Toss something in your inventory to someone in\
+the room.""", self.game.getYourInventory, 2),
+##game,task
+##    self.game.viewYourInventory, self.game.useItem,
+##self.game.getYourInventory, self.game.takeItem, self.game.dropItem,
+##self.game.throwItem, self.game.tossItem
+
+"shop" : (self.game.viewShop, "View what's available for purchase.",
+          [], 0),
+"buy" : (self.game.buyItem, "Purchase something.",
+         self.game.getShopInventory, 1),
+"sell" : (self.game.sellItem, "Sell something from your inventory.",
+          self.game.getYourInventory, 0),
+##game,task
+##    self.game.viewShop, self.game.buyItem, self.game.getShopInventory,
+##self.game.sellItem
+
+"level" : (self.game.viewGains, "View techniques and attributes you can learn.",
+           [], 0),
+"learn" : (self.game.learnGain, "Learn a technique or attribute.",
+           self.game.getNewGains, 0),
+"forget" : (self.game.forgetGain, "Forget a technique or attribute.",
+            self.game.getYourGains, 0),
+##game,task
+##    self.game.viewGains, self.game.learnGain, self.game.getNewGains,
+##self.game.forgetGain, self.game.getYourGains
+
+"wait" : (self.game.wait, "Do nothing.", [], 0),
+"attack" : (self.game.attack, "Attack with your main weapon.", [], 1),
+"tech" : (self.game.useTech, "Use a technique.",
+          self.game.getTechniques, 1),
+##game,task
+##    self.game.wait, self.game.attack, self.game.useTech,
+##self.game.getTechniques
+                         }
+
+    modifiers = ["carefully",   #slower but better      
+                 "quickly",     #faster but worse
+                          ]
         
-        while self.nameParseable(language, moniker):
-            elapsed = datetime.datetime.now() - start
-            
-            if elapsed.total_seconds() > 10:
-                return "timelong"
-            
-            builder = []
-            
-            for string in moniker:
-                if string in language:
-                    builder.extend(random.choice(language[string]))
-                else:
-                    builder.append(string)
-            
-            if len(builder) >= 20:
-                return "namelong"
-            else:
-                moniker = builder
-        else:
-            outputName = "".join(moniker).upper()
-            if len(outputName) >= 20:
-                return "namelong"
-            else:
-                return outputName 
-                    
-    def makeNames(self, race, number):
-        language = {
-"word" : [["initial"], ["initial", "midword"], ["initial", "final"],
-          ["initial", "midword", "final"]],
-"initial" : [["onset", "rime"], ["s", "sonset", "rime"], ["rime"]],
-"final" : [["sonorant", "e"], ["c"], ["k"], ["p"], ["que"], ["s"], ["t"],
-           ["xe"], ["bhe"], ["che"], ["dhe"], ["ghe"], ["jhe"], ["khe"],
-           ["phe"], ["qhe"], ["she"], ["the"], ["zhe"]],
-"midword" : [["onset", "rime", "midword"], ["onset", "rime"]],
-"onset" : [["b"], ["c"], ["d"], ["f"], ["g"], ["h"], ["j"], ["k"], ["l"],
-           ["m"], ["n"], ["p"], ["qu"], ["r"], ["s"], ["t"], ["v"], ["w"],
-           ["x"], ["y"], ["z"], ["bh"], ["ch"], ["dh"], ["gh"], ["jh"], ["kh"],
-           ["ph"], ["qh"], ["sh"], ["th"], ["zh"], ["br"], ["cr"], ["dr"],
-           ["fr"], ["gr"], ["jr"], ["kr"], ["pr"], ["qr"], ["shr"], ["tr"],
-           ["vr"], ["wr"], ["zhr"], ["bl"], ["cl"], ["dl"], ["fl"], ["gl"],
-           ["jl"], ["kl"], ["pl"], ["ql"], ["shl"], ["tl"], ["vl"], ["zhl"],
-           ["ng"]],
-"rime" : [["vowel"], ["vowel"], ["vowel", "sonorant"]],
-"vowel" : [["a"], ["ae"], ["e"], ["i"], ["oe"], ["ue"], ["o"], ["u"]],
-"sonorant" : [["r"], ["l"], ["m"], ["n"], ["ng"], ["y"], ["w"], ["h"]],
-"sonset" : [["c"], ["f"], ["h"], ["k"], ["l"], ["m"], ["n"], ["p"], ["qu"],
-            ["t"], ["v"], ["w"], ["y"], ["z"], ["ph"], ["th"], ["cr"], ["dr"],
-            ["fr"], ["kr"], ["pr"], ["tr"], ["vr"], ["cl"], ["fl"], ["kl"],
-            ["pl"], ["ql"], ["tl"], ["vl"], ["ng"]],
-}
-        monikers = []
-        key = "%s.lang" % race
-        lang, exists, control = self.config[key]
+    defaultConfig = {}
         
-        if exists and control == 0:
+    screens = {"Main menu" : self.mainMenu,
+               "New game" : self.newGame,
+               "Load game" : self.loadGame,
+               "Resume game" : self.resumeGame,
+               "Save game" : self.saveGame,
+               "Help" : self.helpScreen,
+               "Options" : self.optionsScreen,
+               "Quit game" : self.quitGame,
+               "Back" : self.history.pop
+               }
+         
+    def __init__(self, savefile="", configfile="swordsandhordes.cfg",
+                 optionargs=[]):
+        ##program,task!!
+        ##    Figure out what, if anything, you want to do with this.
+        if optionargs:
+            for arg in optionargs:
+                pass
+        ##!!
+        
+        self.savefile = savefile
+        self.configfile = configfile
+        
+        saveUngotten = False
+        
+        if self.savefile:
+            saveUngotten = True
+        
+        while saveUngotten:
             temp = {}
-            
             try:
-                with(lang, "r") as f:
-                    temp = json.load(f)
-            except IOError:
-                exists = False
-                control = 0
+                with open(self.savefile, "r") as f:
+                    temp.update(json.load(f))
+                    
+            except IOError as e:
+                print(e)
+                prompt = """\
+It doesn't look like we can open that file. Would you like to select \
+another?"""
                 
-                error = """\
-The file "%s" doesn't exist or can't be opened.
-"%s" is the filename specified for naming %s characters.
-If you don't know what to do about that, ask someone who does, like me \
-(Madison (the writer of Swords and Hordes)), or just deal with every %s \
-character having the default style of names.
-self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
-                                   key, lang, exists, control)
-    
-                self.parent.message(error)
+                selection = self.yesOrNo(prompt)
                 
-                self.config[key] = lang, exists, control
+                if selection:
+                    self.savefile = tkFileDialog.askopenfilename()
+                else:
+                    saveUngotten == False
+                    self.message("""\
+That's perfectly alright, we just won't load a game right now. You can \
+still do so from the main menu, or just start a new game.""")
+                    
+            except ValueError as e:
+                print(e)
+                prompt = """\
+It doesn't look like that file is properly formatted. Would you like to \
+select another?"""
+                selection = self.yesOrNo(prompt)
                 
-            except ValueError:
-                exists = False
-                control = 1
-                
-                error = """\
-The file "%s" exists but isn't a legal JSON document.
-"%s" is the filename specified for naming %s characters.
-If you don't know what to do about that, ask someone who does, like me \
-(Madison (the writer of Swords and Hordes)), or just deal with every %s \
-character having the default style of names.
-self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
-                                   key, lang, exists, control)
-                self.parent.message(error)
+                if selection:
+                    self.savefile = tkFileDialog.askopenfilename()
+                else:
+                    saveUngotten == False
+                    self.message("""\
+That's perfectly alright, we just won't load a game right now. You can \
+still do so from the main menu, or just start a new game.""")
+            
             else:
+                ##!!
+                ##task    Fucking well fix this, my friend
                 try:
-                    foo = self.makeName(temp)
-                except KeyError:
-                    exists = False
-                    control = 2
-                    
+                    self.game = sah.GameState(self, temp)
+                except ValueError:
+                    self.game = None
+                ##!!
+        
+        ##program,external!!
+        ##    Fiddle with this so that people can use the file dialog if they
+        ##want to.
+        configUngotten = True
+        
+        while configUngotten: 
+            try:
+                with open(self.configfile, "r") as f:
+                    self.config.update(json.load(f))
+            except IOError as e:
+                error = ""
+                if self.configfile != "swordsandhordes.cfg":
                     error = """\
-The file "%s" is a legal JSON document that doesn't do what it should. \
-Something is wrong with it- it probably doesn't have a "word" entry.
-"%s" is the filename specified for naming %s characters.
-If you don't know what to do about that, ask someone who does, like me \
-(Madison (the writer of Swords and Hordes)), or just deal with every %s \
-character having the default style of names.
-self.config[%s] = %s, %s, %s""" % (lang, lang, race, race,
-                                   key, lang, exists, control)
-                    self.config[key] = lang, exists, control
+For best results, don't delete config files or move them out of the\
+directory swordsandhordescl.py is in. We'll try the default config file (\
+swordsandhordes.cfg), so you're fine, but if you had %s set up to your \
+liking you may want to track it down and put it back in its place.
+If you haven't done anything with any config files but you're still see\
+ing this error, contact me (Madison (the author of Swords and Hordes)) at \
+maseaver@gmail.com.""" % self.configfile
+                    self.configfile = "swordsandhordes.cfg"
                 else:
-                    exists = True
-                    control = 1
-                    
-                    monikers.append(foo)
-                    language = temp
-                    
-                    self.config[key] = lang, exists, control
-                    
-        elif exists and control == 1:
-            with open(lang, "r") as f:
-                language = json.load(f)
-        
-        duration = False
-        length = False
-        
-        while len(monikers) < number:
-            foo = self.makeName(language)
-            
-            if foo == "timelong":
-                if duration:
                     error = """\
-It's taking too long to come up with names for an %s.
-If you don't know what to do about that, ask someone who does, like me \
-(Madison (the writer of Swords and Hordes)). In the meantime, I'm going to \
-close the program- sorry.
-language = %s
-self.config[%s] = %s, %s, %s""" % (race, json.dumps(language), key, lang,
-                                   exists, control)
-                    self.parent.message(error)
-                    sys.exit("""Seriously, tell me if this happens. \
-maseaver@gmail.com""")
-                else:
-                    duration = True
-            elif foo == "namelong":
-                if length:
-                    error = """\
-The language being used makes names that are too long.
-If you don't know what to do about that, ask someone who does, like me \
-(Madison (the writer of Swords and Hordes)). In the meantime, I'm going to \
-close the program- sorry.
-language = %s
-config[%s] = %s, %s, %s""" % (json.dumps(language), key, lang,
-                              exists, control)
-                    self.parent.message(error)
-                    sys.exit("""Seriously, tell me if this happens. \
-maseaver@gmail.com""")
-            else:
-                monikers.append(foo)
-        
-        return monikers
-    
-    def getConfigNew(self):
-        #self.config = self.parent.getGameConfig()
-        razzamatazz = {"races" : ["orc", "ratfolk", "skeleton", "human"],
-                       "genders" : ["puce", "sienna", "periwinkle",
-                                    "chartreuse"],}
-        for race in razzamatazz["races"]:
-            razzamatazz["%s.lang" % race] = "", False, 0
-        return razzamatazz
-    
-    def getConfig(self, config):
-        self.config = config
-    
-    def heroSetupNew(self):
-        tempHero = GameState.START_HERO
-        
-        attempts = 0
-        while not tempHero["race"]:
-            prompt = ""
-            
-            if attempts == 0:
-                prompt = """\
-Welcome to the Hellcave, adventurer. What is your race?"""
-            else:
-                prompt = """\
-Didn't understand that, mate. Really, what's your race?"""
+For best results, don't delete swordsandhordes.cfg or move it out of the d\
+irectory swordsandhordescl.py is in. We'll recreate it with the default values\
+, so you're fine, but if you had it set up to your liking you may want to trac\
+k it down and put it back in its place.
+If you haven't done anything with any config files but you're still see\
+ing this error, contact me (Madison (the author of Swords and Hordes)) at \
+maseaver@gmail.com."""
                 
-            options = self.config["races"]
+                self.message(error)
+                print(e)
+                
+                configUngotten = False
             
-            tempHero["race"] = self.parent.select(prompt, options)
-            attempts = attempts + 1
-        
-        attempts = 0
-        while not tempHero["gender"]:
-            prompt = ""
-            
-            if attempts == 0:
-                foo = tempHero["race"]
-                prompt = """\
-Of course, and a fine specimen of %s you are. What is your gender?""" % foo
+            except ValueError as e:
+                if self.configfile != "swordsandhordes.cfg":
+                    error = """\
+For best results, don't edit config files by hand unless you're pre\
+tty sure you know what you're doing (e.g., you're modding Swords and Hordes \
+extensively and working through the options page doesn't cut it). The program,\
+ if I've done my job correctly, can make sure that the config file is correctl\
+y formatted when it's saved. We'll try swordsandhordes.cfg.
+If you haven't done anything with any config files but you're still see\
+ing this error, contact me (Madison (the author of Swords and Hordes)) at \
+maseaver@gmail.com."""
+                    self.message(error)
+                    print(e)
+                    
+                    self.configfile = "swordsandhordes.cfg"
+                else:
+                    error = """\
+For best results, don't edit config files by hand unless you're pre\
+tty sure you know what you're doing (e.g., you're modding Swords and Hordes \
+extensively and working through the options page doesn't cut it). The program,\
+ if I've done my job correctly, can make sure that the config file is correctl\
+y formatted when it's saved. We'll use the default config and write it to \
+swordsandhordes.cfg.
+If you haven't done anything with any config files but you're still see\
+ing this error, contact me (Madison (the author of Swords and Hordes)) at \
+maseaver@gmail.com."""
+                
+                    configUngotten = False
             else:
-                bar = len(self.config["genders"])
-                prompt = """\
-Come on now, there's only %d, you've got to be one... so which?""" % bar
-            options = self.config["genders"]
+                configUngotten = False
             
-            tempHero["gender"] = self.parent.select(prompt, options)
+            finally:
+                self.saveConfig()
+        ##!!
             
-            attempts = attempts + 1
-        
-        attempts = 0
-        while tempHero["name"] in ["", "none of these"]:
-            prompt = ""
-            
-            if attempts == 0:
-                foo = tempHero["gender"], tempHero["race"]
-                prompt = """\
-And may I ask, mighty %s %s warrior, what is your honorable name?""" % foo
-            else:
-                prompt = """\
-None of those? Well then, surely one of these is it?"""
-            
-            options = self.makeNames(tempHero["race"], 5)
-            options.append("none of these")
-            
-            tempHero["name"] = self.parent.select(prompt, options)
-        
-        prompt = """\
-You are a %s %s named %s.
-Is that alright?""" % (tempHero["gender"], tempHero["race"],
-                       tempHero["name"])
-        options = ["Yes", "No"]
-        
-        if self.parent.select(prompt, options) == "" or "Yes":
-            congratulations = """\
-Alright! Your hero is %s the %s %s! When the game's actually up and running, \
-there'll be something to do after this... lmao. Until then!""" % (
-tempHero["name"], tempHero["gender"], tempHero["race"])
-            self.parent.message(congratulations)
-            you, value = self.heroSetup(tempHero)
-            return you, value
-            
-        else:
-            return {}, True
-            
-    def heroSetup(self, hero):
-        return hero, False
+        self.screen = self.mainMenu
+        self.history = [self.mainMenu]
+        self.justSaved = False
     
-    def roomSetupNew(self, coordinates):
-        pass
-    
-    def roomSetup(self, coordinates, room):
-        pass
-    
-    def new(self):
-        self.config = self.getConfigNew()
-        
-        heroNeeded = True
-        while heroNeeded:
-            self.hero, heroNeeded = self.heroSetupNew()
-        self.rooms = {(0, 0, 0): GameState.FIRST_ROOM}
-        ##    GameState.getConfig(), GameState.heroSetup(),
-        ##GameState.FIRST_ROOM
-        
-    def load(self):
-        savefile = {}
-        
-        with open(self.filename, "r") as f:
-            savefile = json.load(f)
-        
-        self.config = getConfig(savefile["config"])
-        self.hero = self.heroSetup(savefile["hero"])
-        self.rooms = {}
-        
-        for coordinates in savefile["rooms"]:
-            savefile["rooms"][coordinates] = room
-            self.rooms[coordinates] = self.roomSetup(coordinates, room)
-        ##    GameState.heroSetup(hero), GameState.roomSetup(room)
-        
-class ProgramState():
-    def __init__(self):
-        self.message("""\
-S W O R D S + A N D + H O R D E S
-
-""")
-        self.game = None
-
-        self.setupCommands()
+    def saveConfig(self):
+        try:
+            with open(self.configfile, "w") as f:
+                json.dump(self.config, f)
+        except IOError as e:
+            error = """\
+Not sure why this happened honestly? Tell me (Madison (the author of Swords \
+and Hordes)) at maseaver@gmail.com if it does."""
+            self.message(error)
+            print(e)
+            
+            raise
 
     def message(self, string):
         middle = ""
@@ -375,124 +287,18 @@ S W O R D S + A N D + H O R D E S
                         middle = middle[lineend + 1:]
                 else:
                     print(middle)
-    
-    def checkFiles(self):
-
-    def setupCommands(self):
-        """Create the command lexicon.
-
-        The form of an entry in self.commands is as follows:
-            * The key is a string the user may enter as a "verb".
-            * The value is a 4-ple.
-            * value[0] is a function, the one eventually called when the key is
-        entered as a command.
-            * value[1] is a description of what the command does, for menus and
-        the like.
-            * value[2] is a list of clarifiers the verb takes. A clarifier is a
-        string without which the verb cannot be interpreted. In essence, a verb
-        that requires a clarifier is a blanket identifier for a whole class of
-        verbs, and the clarifier tells you which verb is meant. The archetypal
-        clarifier verbs are ones that involve an item in the player's inventory-
-        "use", "drop", etc. Most of the time, value[2] will be an empty list or
-        a method on the GameState that returns a list of valid clarifiers.
-            * value[3] is an integer 0, 1, or 2, indicating the verb's behavior
-        with respect to objects. 0 indicates that the verb takes no objects, 1
-        indicates that the verb takes an object but has a default object if
-        no explicit object is given, and 2 indicates that the verb requires an
-        explicit object- there is no reasonable way to deduce which object was
-        intended if the player did not supply one. The GameState keeps track of
-        what objects can be acted on, and this list consists of the player
-        character, every non-player character in the current room, and every
-        inanimate object in the current room that is not in the player's
-        inventory. So, for instance, "save"- like most of the commands that do
-        not advance the GameState's clock- is 0, but so is "wait"- which
-        advances the GameState's clock but does nothing else. "attack" is 1,
-        because its function has a default behavior if no object is specified
-        (that is, if the room is empty except for the player character, it
-        describes the player attacking empty air; if there are non-PC objects in
-        the room, it preferentially attacks hostile NPCs, then non-hostile NPCs,
-        then inanimate objects, always picking the first in the list), but an
-        explicit object can be given (the player can pick one of the objects in
-        the room to attack, including the player character themself if desired).
-        At the moment, I can't think of any commands that I intend to implement
-        that act on one of the objects in the room but which has no reasonable
-        default behavior, but I wanted to build it in just in case.
-
-        -----
-
-        self.modifiers is a list of "adverbs" that can affect how the verb is
-        executed, but are never required. What a modifier "means" for a given
-        verb is idiosyncratic, but- if I've done my job correctly- intuitive.
-
-        """
-        
-        self.commands = {
-"new" : (self.newGame, "Start new game.", [], 0),
-"resume" : (self.resumeGame, "Resume active game.", [], 0),
-"load" : (self.loadGame, "Load existing gamefile.", [], 0),
-"save" : (self.saveGame, "Save active game.", [], 0),
-"help" : (self.helpScreen, "View help screen.", [], 0),
-"options" : (self.optionsScreen, "View options screen.", [], 0),
-"quit" : (self.quitGame, "Quit game.", [], 0),
-"menu" : (self.mainMenu, "Go to main menu.", [], 0),
-##  self.newGame, self.resumeGame, self.loadGame, self.helpScreen,
-##self.saveGame, self.optionsScreen, self.quitGame, self.mainMenu
-
-
-"inventory" : (self.game.viewYourInventory, "View your inventory.", [], 0),
-"use" : (self.game.useItem, "Use an item in the inventory.",
-         self.game.getYourInventory, 1),
-"take" : (self.game.takeItem, "Pick up an object in the room.", [], 1),
-"drop" : (self.game.dropItem, "Drop an item from the inventory.",
-          self.game.getYourInventory, 0),
-"throw" : (self.game.throwItem, """Throw something in your inventory at some\
-thing in the room.""", self.game.getYourInventory, 2),
-"toss" : (self.game.tossItem, """Toss something in your inventory to someone in\
-the room.""", self.game.getYourInventory, 2),
-##  self.game.viewYourInventory, self.game.useItem,
-##self.game.getYourInventory, self.game.takeItem, self.game.dropItem,
-##self.game.throwItem, self.game.tossItem
-
-"shop" : (self.game.viewShop, "View what's available for purchase.",
-          [], 0),
-"buy" : (self.game.buyItem, "Purchase something.",
-         self.game.getShopInventory, 1),
-"sell" : (self.game.sellItem, "Sell something from your inventory.",
-          self.game.getYourInventory, 0),
-##  self.game.viewShop, self.game.buyItem, self.game.getShopInventory,
-##self.game.sellItem
-
-"level" : (self.game.viewGains, "View techniques and attributes you can learn.",
-           [], 0),
-"learn" : (self.game.learnGain, "Learn a technique or attribute.",
-           self.game.getNewGains, 0),
-"forget" : (self.game.forgetGain, "Forget a technique or attribute.",
-            self.game.getYourGains, 0),
-##  self.game.viewGains, self.game.learnGain, self.game.getNewGains,
-##self.game.forgetGain, self.game.getYourGains
-
-"wait" : (self.game.wait, "Do nothing.", [], 0),
-"attack" : (self.game.attack, "Attack with your main weapon.", [], 1),
-"tech" : (self.game.useTech, "Use a technique.",
-          self.game.getTechniques, 1),
-##  self.game.wait, self.game.attack, self.game.useTech,
-##self.game.getTechniques
-                         }
-
-        self.modifiers = ["carefully",      #slower but better
-                          "quickly",        #faster but worse
-                          ]
         
     def command(self):
+        ##program,task!!  Write a better docstring for ProgramState.command
         """Return a stack of verb phrases.
 
         Honestly this is a bear of a method. It takes an arbitrary input string
         and grinds out a stack of verb phrases, ignoring anything that doesn't
         fit into its framework.
         """
-        ##  Write a better docstring for command()
+        ##!!
         
-        rawCommand = raw_input("\n> ")
+        rawCommand = input("\n> ")
         #   Grab the user's input.
 
         command = rawCommand.split()
@@ -737,10 +543,11 @@ the room.""", self.game.getYourInventory, 2),
         if modifier and not mods[-1]:
             #   What if we end the parsing process with <modifier> non-empty?
             #Clearly the player intended to apply it to an action, and if the
-            #last action lacks one, it's pretty simple to deduce what the player
-            #intended. I flatly refuse to handle any case of syntactic ambiguity
-            #less tractable than this. It's a parser, not an AI, thanks, and if
-            #I understood Tkinter better I wouldn't have written this at all.
+            #last action lacks one, it's pretty simple to deduce what the
+            #player intended. I flatly refuse to handle any case of syntactic
+            #ambiguity less tractable than this. It's a parser, not an AI,
+            #thanks, and if I understood Tkinter better I wouldn't have written
+            #this at all.
 
             mods[-1] = modifier
 
@@ -748,7 +555,7 @@ the room.""", self.game.getYourInventory, 2),
         #one list? So, we zip the two together. Note that the form of an item in
         #<actions> after this line is ((verb, clarifier, objects), modifier).
 
-        actions = zip(actions, mods)
+        actions = list(zip(actions, mods))
 
         #   We assume that the player has entered the actions they want to take
         #queue-wise, with the first action first, etc.. I want to use the list
@@ -771,7 +578,8 @@ the room.""", self.game.getYourInventory, 2),
         #write the code that this returns to in such a way that that's not a
         #problem.
 
-        ## Write the code handling the action stack and what to do with
+        ##program,game,task
+        ##    Write the code handling the action stack and what to do with
         ##empty stacks and erroneous actions.
         
         return actions
@@ -798,7 +606,7 @@ the room.""", self.game.getYourInventory, 2),
         ##complexity down a lot, but it'd still be a pretty big job to tackle.
                     
     def verbStructure(self, verb):
-        ##  Write a docstring for <verbStructure>, probably just one line.
+        ##task  Write a docstring for <verbStructure>, probably just one line.
         clarifier = 0
         if self.commands[verb][2]:
             #   If the third value of the verb's listing in self.commands, which
@@ -838,6 +646,22 @@ the room.""", self.game.getYourInventory, 2),
             
         return verb, clarifier, obj
     
+    def chooseYesOrNo(self, prompt):
+        self.justSaved = False
+        return self.yesOrNo(prompt)
+    
+    def yesOrNo(self, prompt):
+        selection = select(prompt, ["Yes", "No"])
+        
+        if selection in ["", "Yes"]:
+            return True
+        else:
+            return False
+    
+    def choose(self, prompt, options):
+        self.justSaved = False
+        return self.select(prompt, options)
+    
     def select(self, prompt, options):
         patternMatcher = {}
         
@@ -855,7 +679,7 @@ the room.""", self.game.getYourInventory, 2),
                 
         patterns = patternMatcher.keys()
         
-        rawSelection = raw_input("\n> ")
+        rawSelection = input("\n> ")
         processing = rawSelection.lstrip()
         
         if processing:
@@ -920,6 +744,173 @@ the room.""", self.game.getYourInventory, 2),
             print("")
             
             return ""
-
+    
+    def checkSaved(self):
+        if game:
+            if game.isSaved():
+                self.justSaved = True
+            else:
+                prompt = """\
+    Do you want to save first?"""
+                
+                selection = self.yesOrNo(prompt)
+                
+                if selection:
+                    self.history.append(self.screen)
+                    self.screen = self.saveGame
+                else:
+                    self.justSaved = True
+        else:
+            self.justSaved = True
+        
+    def mainLoop(self):
+        while True:
+            if not self.history:
+                self.history.append(self.mainMenu)
+            self.screen()
+    
+    def mainMenu(self):
+        prompt = """\
+    S W O R D S + A N D + H O R D E S
+    
+    Welcome to Swords and Hordes!"""
+        options = []
+        
+        selection = ""
+        
+        while not selection:
+            if self.game:
+                options = ["New game", "Load game", "Resume game", "Save game",
+                           "Help", "Options", "Quit game"]
+            else:
+                options = ["New game", "Load game",
+                           "Help", "Options", "Quit game"]
+                
+            selection = self.select(prompt, options)
+        
+        self.history.append(self.screen)
+        self.screen = self.screens[selection]
+    
+    def newGame(self):
+        if not self.justSaved:
+            self.checkSaved()
+        else:
+            self.game = sah.GameState(self)
+            self.screen = self.history.pop()
+    
+    def loadGame(self):
+        if not self.justSaved:
+            self.checkSaved()
+        else:
+            untried = True
+            success = False
+            
+            while not success:
+                newFilename = ""
+                data = {}
+                
+                askprompt = ""
+                if untried:
+                    askprompt = "Try to load?"
+                else:
+                    askprompt = "Try to load again?"
+                if not self.yesOrNo(askprompt):
+                    break
+                else:
+                    newFilename = tkFileDialog.askopenfilename()
+                    
+                    try:
+                        with open(newFilename, "r") as f:
+                            data = json.load(f)
+                            
+                    except IOError as e:
+                        error = """\
+It doesn't look like we can open that file."""
+                        self.message(error)
+                        print(e)
+                    
+                    except ValueError as e:
+                        error = """\
+It doesn't look like that file is correctly formatted."""
+                        self.message(error)
+                        print(e)
+                    else:
+                        try:
+                            self.game = sah.GameState(self, data)
+                        except ValueError:
+                            error = """\
+It looks like that's correctly formatted as... something... but not as a savef\
+ile."""
+                            self.message(error)
+                            print(e)
+                        else:
+                            success = True
+                            self.message("Success!")
+            self.screen = self.history.pop()
+    
+    def resumeGame(self):
+        pass
+    
+    def saveGame(self):
+        untried = True
+        while not self.filename or untried:
+            askprompt = ""
+            
+            if untried:
+                askprompt = "Try to save?"
+            else:
+                askprompt = "Try to save again?"
+                
+            if not self.yesOrNo(askprompt):
+                break
+            else:
+                tmp = tkFileDialog.asksaveasfilename(initialfile=self.filename)
+                self.filename = tmp
+                untried = False
+        else:
+            try:
+                with open(self.filename, "w") as f:
+                    data = self.game.save()
+                    json.dump(data, f)
+            except IOError as e:
+                error = "Ya fucked up! (Somehow.)"
+                print(e)
+        
+        self.screen = self.history.pop()
+        
+    ##program,task!!
+    def helpScreen(self):
+        pass
+    ##!!
+    
+    ##program,task!!
+    def optionsScreen(self):
+        pass
+    ##!!
+    
+    def quitGame(self):
+        if not self.justSaved:
+            self.checkSaved()
+        else:
+            self.message("Goodbye! We should do this again sometime.")
+            sys.exit(0)
+            
 if __name__ == "__main__":
-    program = ProgramState()
+    options = []
+    
+    savefile = None
+    configfile = "swordsandhordes.cfg"
+    optionargs = []
+    
+    if len(sys.argv) > 1:
+        for arg in sys.argv:
+            if arg.endswith(".sah"):
+                savefile = arg
+            elif arg.endswith(".cfg"):
+                configfile = arg
+            elif arg in options:
+                optionargs.append(arg)
+                
+    ProgramState = ProgramState(savefile=savefile, configfile=configfile,
+                                optionargs=optionargs)
+    ProgramState.mainLoop()
